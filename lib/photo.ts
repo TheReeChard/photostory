@@ -53,9 +53,21 @@ function exifDate(raw: unknown, fallback: number): Date {
 
 async function reverseGeocode(latitude: number, longitude: number) {
   try {
-    const response = await fetch(`/api/reverse-geocode?lat=${latitude}&lon=${longitude}`);
+    // GitHub Pages cannot run a Next.js API route, so query Nominatim directly.
+    // The browser sends only the coordinates (never the photo bytes).
+    const url = new URL("https://nominatim.openstreetmap.org/reverse");
+    url.searchParams.set("format", "jsonv2");
+    url.searchParams.set("lat", String(latitude));
+    url.searchParams.set("lon", String(longitude));
+    url.searchParams.set("zoom", "12");
+    url.searchParams.set("addressdetails", "1");
+
+    const response = await fetch(url, {
+      headers: { "Accept-Language": navigator.language || "en" },
+    });
+    if (!response.ok) return "";
     const data = await response.json();
-    return typeof data.displayName === "string" ? data.displayName : "";
+    return typeof data.display_name === "string" ? data.display_name : "";
   } catch {
     return "";
   }

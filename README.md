@@ -39,6 +39,20 @@ npm run dev
 
 Then open `http://localhost:3000`.
 
+## Deploy to GitHub Pages
+
+This repository includes a GitHub Actions workflow that builds the Next.js app
+as a static site and publishes it whenever `main` is pushed.
+
+1. In the GitHub repository, open **Settings > Pages**.
+2. Under **Build and deployment**, set **Source** to **GitHub Actions**.
+3. Push the project to `main`, then watch the **Actions** tab for the deployment.
+4. Open `https://thereechard.github.io/photostory/`.
+
+The deployed base path is derived from the GitHub repository name, so it will
+continue to work if the repository is renamed. GPS reverse-geocoding runs from
+the visitor's browser because GitHub Pages cannot host server-side API routes.
+
 ## Production notes
 
 Before public launch, replace the public Nominatim dependency with a production geocoding provider or a properly hosted geocoding service with caching and an explicit privacy policy. Large photo collections should also move image decoding/PDF work to Web Workers to keep the UI responsive.
