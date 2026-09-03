@@ -158,7 +158,20 @@ button { color: inherit; }
 .toggleRow { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #5f5f5f; margin: 12px 0; }
 .toggleRow input { accent-color: #171717; }
 .reviewList { display: grid; gap: 12px; }
-.reviewPdfPreview { height: min(72vh, 760px); min-height: 520px; margin-bottom: 24px; overflow: hidden; display: flex; flex-direction: column; background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+.documentPreview { display: grid; gap: 22px; justify-items: center; margin-bottom: 28px; padding: 18px; border-radius: 16px; background: #e7e7e3; }
+.paperPage { position: relative; width: min(100%, 720px); aspect-ratio: 210 / 297; padding: 5.5% 7.6%; background: #fff; box-shadow: 0 5px 22px rgba(0,0,0,.12); overflow: hidden; }
+.paperHeader { padding-bottom: 12px; border-bottom: 1px solid #e4e4e0; font-size: clamp(14px, 2vw, 20px); font-weight: 750; }
+.paperMoments { display: flex; flex-direction: column; gap: 16px; padding-top: 16px; }
+.paperMoment { min-height: 0; border-bottom: 1px solid #ecece8; padding-bottom: 14px; }
+.paperMomentHeading { min-height: 26px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: clamp(8px, 1.2vw, 11px); font-weight: 700; }
+.paperDragHandle { flex: 0 0 auto; width: 27px; height: 25px; display: grid; place-items: center; border: 1px solid #ddd; border-radius: 7px; background: #fff; }
+.paperGallery { height: clamp(150px, 25vw, 265px); border-radius: 9px; }
+.paperGallery.squareCorners, .paperGallery.squareCorners .galleryTile { border-radius: 0; }
+.paperMoment > p { margin: 10px 0 0; color: #444; font-size: clamp(8px, 1.25vw, 11px); line-height: 1.45; }
+.paperPageNumber { position: absolute; bottom: 3%; left: 0; right: 0; text-align: center; color: #aaa; font-size: 9px; }
+.coverPreview { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.coverPreview h2 { margin: 0; font-size: clamp(28px, 5vw, 48px); }
+.coverPreview p { color: #777; font-size: 12px; }
 .reviewCard { width: 100%; background: #fff; border: 1px solid var(--line); border-radius: 14px; display: grid; grid-template-columns: 28px 30px 180px minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 12px; text-align: left; cursor: pointer; }
 .reviewCard:hover, .reviewCard.selected { border-color: #b7b7b2; box-shadow: var(--shadow); }
 .reviewIndex { width: 24px; height: 24px; border-radius: 999px; background: #171717; color: white; display: grid; place-items: center; font-size: 10px; font-weight: 700; }
@@ -245,7 +258,9 @@ button { color: inherit; }
   .timelineRow { grid-template-columns: 16px minmax(0,1fr); gap: 6px; }
   .eventMetaRow { align-items: flex-start; flex-direction: column; gap: 4px; }
   .reviewCard { grid-template-columns: 28px 26px minmax(0,1fr); align-items: start; }
-  .reviewPdfPreview { height: 65vh; min-height: 440px; }
+  .documentPreview { margin-left: -8px; margin-right: -8px; padding: 8px; gap: 12px; }
+  .paperPage { padding: 5% 6%; }
+  .paperGallery { height: clamp(105px, 38vw, 220px); }
   .reviewPhotoGallery { grid-column: 3; width: 100%; height: 145px; }
   .reviewText { grid-column: 3; }
   .editPill { grid-column: 3; justify-self: start; }

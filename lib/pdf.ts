@@ -140,7 +140,9 @@ async function fittedPhotoData(photo: StoryPhoto, rect: Rect, rounded: boolean) 
     context.clip();
   }
   context.drawImage(image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.92);
+  // PNG avoids jsPDF's JPEG encoder/compression path, which can turn some
+  // browser-generated canvases into repeated vertical bands in the PDF.
+  return canvas.toDataURL("image/png");
 }
 
 async function drawPhoto(doc: jsPDF, photo: StoryPhoto, rect: Rect, rounded: boolean) {
@@ -149,13 +151,13 @@ async function drawPhoto(doc: jsPDF, photo: StoryPhoto, rect: Rect, rounded: boo
     const fitted = await fittedPhotoData(photo, rect, rounded);
     doc.addImage(
       fitted,
-      "JPEG",
+      "PNG",
       rect.x,
       rect.y,
       rect.w,
       rect.h,
       undefined,
-      "FAST",
+      "NONE",
     );
   } catch {
     doc.setTextColor(145, 145, 140);

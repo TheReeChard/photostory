@@ -22,7 +22,7 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
-import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, useMemo, useRef, useState } from "react";
 import { buildEvents, formatDateTime, parsePhoto } from "@/lib/photo";
 import { generateStoryPdf } from "@/lib/pdf";
 import type { PdfSettings, PhotoLayout, StoryEvent, StoryPhoto } from "@/lib/types";
@@ -191,7 +191,6 @@ export default function Home() {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
-  const [reviewPdfBusy, setReviewPdfBusy] = useState(false);
   const [pdfSettings, setPdfSettings] = useState<PdfSettings>({
     photosPerPage: 4,
     pageLayout: "auto",
@@ -220,28 +219,30 @@ export default function Home() {
   const photoById = useMemo(() => new Map(photos.map((p) => [p.id, p])), [photos]);
   const selectedEvent = events.find((e) => e.id === selectedEventId) ?? null;
 
-  useEffect(() => {
-    if (step !== 2 || !events.length) return;
-    let cancelled = false;
-    const timer = window.setTimeout(async () => {
-      setReviewPdfBusy(true);
-      try {
-        const blob = await generateStoryPdf({ title, events, photos, settings: pdfSettings });
-        if (cancelled) return;
-        const url = URL.createObjectURL(blob);
-        if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current);
-        pdfUrlRef.current = url;
-        setPdfBlob(blob);
-        setPdfUrl(url);
-      } finally {
-        if (!cancelled) setReviewPdfBusy(false);
+  const reviewPages = useMemo(() => {
+    const pages: Array<Array<{ event: StoryEvent; photos: StoryPhoto[]; chunkIndex: number; chunkCount: number }>> = [];
+    let page: Array<{ event: StoryEvent; photos: StoryPhoto[]; chunkIndex: number; chunkCount: number }> = [];
+    let pagePhotoCount = 0;
+
+    for (const event of events) {
+      const eventPhotos = event.photoIds.map((id) => photoById.get(id)).filter(Boolean) as StoryPhoto[];
+      const chunks: StoryPhoto[][] = [];
+      for (let index = 0; index < eventPhotos.length; index += pdfSettings.photosPerPage) {
+        chunks.push(eventPhotos.slice(index, index + pdfSettings.photosPerPage));
       }
-    }, 350);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [step, title, events, photos, pdfSettings]);
+      chunks.forEach((chunk, chunkIndex) => {
+        if (page.length && pagePhotoCount + chunk.length > pdfSettings.photosPerPage) {
+          pages.push(page);
+          page = [];
+          pagePhotoCount = 0;
+        }
+        page.push({ event, photos: chunk, chunkIndex, chunkCount: chunks.length });
+        pagePhotoCount += chunk.length;
+      });
+    }
+    if (page.length) pages.push(page);
+    return pages;
+  }, [events, photoById, pdfSettings.photosPerPage]);
 
   async function ingestFiles(fileList: FileList | File[]) {
     const accepted = Array.from(fileList).filter((file) =>
@@ -619,14 +620,52 @@ export default function Home() {
               </div>
             </div>
 
-            <section className="reviewPdfPreview" aria-label="Live PDF preview">
-              <div className="pdfPreviewHeader">
-                <strong>Live PDF preview</strong>
-                <span>{reviewPdfBusy ? "Updating…" : "A4 portrait · updates with your settings"}</span>
-              </div>
-              {pdfUrl
-                ? <iframe className="pdfFrame" src={`${pdfUrl}#toolbar=0&view=FitH`} title="Live PhotoStory PDF preview" />
-                : <div className="pdfPlaceholder"><Loader2 className="spin" /></div>}
+            <section className="documentPreview" aria-label="Editable document preview">
+              {pdfSettings.includeCover && (
+                <article className="paperPage coverPreview">
+                  <h2>{title || "Our Journey"}</h2>
+                  <p>{photos.length} photos · {events.length} moments</p>
+                </article>
+              )}
+              {reviewPages.map((page, pageIndex) => (
+                <article className="paperPage" key={`page-${pageIndex}`}>
+                  <header className="paperHeader">{title || "Our Journey"}</header>
+                  <div className="paperMoments">
+                    {page.map(({ event, photos: chunk, chunkIndex, chunkCount }) => {
+                      const taken = formatDateTime(event.takenAt);
+                      const layout = pdfSettings.pageLayout === "auto" ? event.photoLayout : pdfSettings.pageLayout;
+                      return (
+                        <section
+                          className={cn("paperMoment sortableEvent", dragEventId === event.id && "isDragging")}
+                          key={`${event.id}-${chunkIndex}`}
+                          data-sort-event-id={event.id}
+                        >
+                          <div className="paperMomentHeading">
+                            <span>
+                              {pdfSettings.includeTimestamp && `${taken.date} · ${taken.time}`}
+                              {pdfSettings.includeTimestamp && pdfSettings.includeLocation && event.location && " · "}
+                              {pdfSettings.includeLocation && event.location}
+                              {chunkIndex > 0 && ` · continued ${chunkIndex + 1}/${chunkCount}`}
+                            </span>
+                            <button
+                              className="dragHandle paperDragHandle"
+                              type="button"
+                              aria-label="Drag moment to reorder"
+                              onPointerDown={(e) => beginEventDrag(e, event.id)}
+                              onPointerMove={continueEventDrag}
+                              onPointerUp={endEventDrag}
+                              onPointerCancel={endEventDrag}
+                            ><GripVertical size={15} /></button>
+                          </div>
+                          <EventPhotoGallery photos={chunk} layout={layout} className={cn("paperGallery", !pdfSettings.roundedCorners && "squareCorners")} max={pdfSettings.photosPerPage} />
+                          {chunkIndex === chunkCount - 1 && <p>{event.memory || "Add a memory to this moment."}</p>}
+                        </section>
+                      );
+                    })}
+                  </div>
+                  <footer className="paperPageNumber">{pageIndex + 1}</footer>
+                </article>
+              ))}
             </section>
 
             <div className="sectionTitleRow"><h2>Moment details</h2></div>
