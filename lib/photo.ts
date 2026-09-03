@@ -16,6 +16,57 @@ function dataUrlFromBlob(blob: Blob): Promise<string> {
   });
 }
 
+function canvasBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Could not encode image")), type, quality);
+  });
+}
+
+async function browserNormalize(blob: Blob, preservePng: boolean): Promise<Blob> {
+  let source: CanvasImageSource;
+  let sourceWidth: number;
+  let sourceHeight: number;
+  let cleanup = () => {};
+
+  try {
+    const bitmap = await createImageBitmap(blob, { imageOrientation: "from-image" });
+    source = bitmap;
+    sourceWidth = bitmap.width;
+    sourceHeight = bitmap.height;
+    cleanup = () => bitmap.close();
+  } catch {
+    const url = URL.createObjectURL(blob);
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error("Browser could not decode image"));
+      element.src = url;
+    });
+    source = image;
+    sourceWidth = image.naturalWidth;
+    sourceHeight = image.naturalHeight;
+    cleanup = () => URL.revokeObjectURL(url);
+  }
+
+  try {
+    // Keep enough resolution for print while avoiding huge canvases on phones.
+    const scale = Math.min(1, 4096 / Math.max(sourceWidth, sourceHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+    canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Canvas is unavailable");
+    if (!preservePng) {
+      context.fillStyle = "#fff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    context.drawImage(source, 0, 0, canvas.width, canvas.height);
+    return await canvasBlob(canvas, preservePng ? "image/png" : "image/jpeg", 0.94);
+  } finally {
+    cleanup();
+  }
+}
+
 async function normalizeImage(file: File): Promise<{ previewUrl: string; dataUrl: string; blob: Blob }> {
   const isHeic = HEIC_TYPES.has(file.type) || /\.(heic|heif)$/i.test(file.name);
   let blob: Blob = file;
@@ -25,6 +76,10 @@ async function normalizeImage(file: File): Promise<{ previewUrl: string; dataUrl
     const converted = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.9 });
     blob = Array.isArray(converted) ? converted[0] : converted;
   }
+
+  // Re-encoding prevents JPEG variants that jsPDF can misread as horizontal
+  // bands, applies EXIF orientation, and produces reliable display dimensions.
+  blob = await browserNormalize(blob, file.type === "image/png" || /\.png$/i.test(file.name));
 
   return {
     previewUrl: URL.createObjectURL(blob),

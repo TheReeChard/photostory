@@ -81,8 +81,8 @@ button { color: inherit; }
 .sectionTitleRow h2 { font-size: 16px; margin: 0; }
 .thumbGrid { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 14px; }
 .uploadCard { position: relative; min-width: 0; }
-.photoThumb { position: relative; width: 100%; aspect-ratio: 4 / 3; border-radius: 12px; overflow: hidden; background: #ececea; border: 1px solid #e5e5e2; }
-.photoThumb img { width: 100%; height: 100%; object-fit: contain; object-position: center; display: block; background: #f0f0ed; }
+.photoThumb { position: relative; width: 100%; aspect-ratio: 4 / 3; border-radius: 12px; overflow: hidden; background: #fff; border: 1px solid #e5e5e2; }
+.photoThumb img { width: 100%; height: 100%; object-fit: cover; object-position: center; display: block; }
 .photoThumb.compact { aspect-ratio: 1.18 / 1; min-width: 56px; border-radius: 9px; }
 .removePhoto { position: absolute; top: 7px; right: 7px; width: 27px; height: 27px; border-radius: 999px; border: 0; background: rgba(20,20,20,.78); color: #fff; display: grid; place-items: center; cursor: pointer; opacity: 0; transition: .15s; }
 .uploadCard:hover .removePhoto { opacity: 1; }
@@ -103,10 +103,10 @@ button { color: inherit; }
 .timelineRow:last-child .timelineRail::after { display: none; }
 .timelineDot { width: 9px; height: 9px; border-radius: 999px; background: #171717; margin-top: 23px; position: relative; z-index: 2; box-shadow: 0 0 0 5px var(--bg); }
 .eventCard { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 14px; display: grid; grid-template-columns: 230px minmax(0,1fr) 42px; gap: 16px; align-items: stretch; }
-.photoGallery { position: relative; display: grid; gap: 6px; min-width: 0; overflow: hidden; border-radius: 12px; background: #f3f3f0; }
+.photoGallery { position: relative; display: grid; gap: 6px; min-width: 0; overflow: hidden; border-radius: 12px; background: #fff; }
 .storyGallery { min-height: 168px; height: 100%; }
-.galleryTile { min-width: 0; min-height: 0; overflow: hidden; border-radius: 8px; background: #eeeeeb; display: grid; place-items: center; }
-.galleryTile img { width: 100%; height: 100%; object-fit: contain; object-position: center; display: block; }
+.galleryTile { min-width: 0; min-height: 0; overflow: hidden; border-radius: 8px; background: #fff; display: grid; place-items: center; }
+.galleryTile img { width: 100%; height: 100%; object-fit: cover; object-position: center; display: block; }
 .photoGallery.layout-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 1fr; }
 .photoGallery.layout-feature { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
 .photoGallery.layout-feature .firstTile { grid-row: 1 / -1; }

@@ -116,13 +116,16 @@ const PHOTO_LAYOUTS: Array<{ value: PhotoLayout; label: string }> = [
   { value: "feature", label: "Feature" },
 ];
 
-function resolvedPhotoLayout(layout: PhotoLayout, count: number): Exclude<PhotoLayout, "auto"> {
+function resolvedPhotoLayout(layout: PhotoLayout, photos: StoryPhoto[]): Exclude<PhotoLayout, "auto"> {
+  const count = photos.length;
   if (layout !== "auto") {
     if (layout === "feature" && count < 3) return "strip";
     return layout;
   }
-  if (count <= 2) return "strip";
-  if (count <= 4) return "feature";
+  const ratios = photos.map((photo) => (photo.width ?? 4) / (photo.height ?? 3));
+  if (count === 1) return "strip";
+  if (count === 2) return ratios.every((ratio) => ratio >= 1.15) ? "grid" : "strip";
+  if (count <= 4) return Math.max(...ratios) - Math.min(...ratios) > 0.45 ? "feature" : "grid";
   return "grid";
 }
 
@@ -138,7 +141,14 @@ function EventPhotoGallery({
   max?: number;
 }) {
   const visible = photos.slice(0, max);
-  const resolved = resolvedPhotoLayout(layout, visible.length);
+  const resolved = resolvedPhotoLayout(layout, visible);
+  const featureIndex = resolved === "feature"
+    ? visible.reduce((best, photo, index) => {
+      const ratio = (photo.width ?? 4) / (photo.height ?? 3);
+      const bestRatio = (visible[best].width ?? 4) / (visible[best].height ?? 3);
+      return ratio > bestRatio ? index : best;
+    }, 0)
+    : -1;
   const stripColumns = Math.max(1, Math.min(visible.length, 4));
 
   const galleryStyle = resolved === "strip"
@@ -153,7 +163,7 @@ function EventPhotoGallery({
       style={galleryStyle}
     >
       {visible.map((photo, index) => (
-        <div className={cn("galleryTile", index === 0 && "firstTile")} key={photo.id}>
+          <div className={cn("galleryTile", index === featureIndex && "firstTile")} key={photo.id}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={photo.previewUrl} alt={photo.file.name} />
         </div>

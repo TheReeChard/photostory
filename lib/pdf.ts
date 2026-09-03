@@ -14,18 +14,23 @@ function safeText(text: string) {
   return text.trim() || "Add a memory to this moment.";
 }
 
-function imageFormat(dataUrl: string): "JPEG" | "PNG" {
-  return dataUrl.startsWith("data:image/png") ? "PNG" : "JPEG";
+function photoRatio(photo: StoryPhoto) {
+  return (photo.width ?? 4) / (photo.height ?? 3);
 }
 
-function resolveLayout(layout: PdfPageLayout | PhotoLayout, count: number): RenderLayout {
+function resolveLayout(layout: PdfPageLayout | PhotoLayout, photos: StoryPhoto[]): RenderLayout {
+  const count = photos.length;
   if (layout !== "auto") {
     if (layout === "feature" && count < 3) return "strip";
     if (layout === "feature" && count > 5) return "grid";
     return layout;
   }
-  if (count <= 2) return "strip";
-  if (count <= 4) return "feature";
+  if (count === 1) return "strip";
+  if (count === 2) return photos.every((photo) => photoRatio(photo) >= 1.15) ? "grid" : "strip";
+  if (count <= 4) {
+    const ratios = photos.map(photoRatio);
+    return Math.max(...ratios) - Math.min(...ratios) > 0.45 ? "feature" : "grid";
+  }
   return "grid";
 }
 
@@ -36,9 +41,13 @@ function imageAreaHeight(count: number, layout: RenderLayout) {
   return 94;
 }
 
-function gridRects(count: number, x: number, y: number, w: number, h: number): Rect[] {
+function gridRects(photos: StoryPhoto[], x: number, y: number, w: number, h: number): Rect[] {
+  const count = photos.length;
   const gap = 4;
-  const columns = count <= 2 ? count : count <= 4 ? 2 : 3;
+  // Two landscape photos look substantially better stacked; two portrait
+  // photos use side-by-side columns. Mixed pairs follow the available page.
+  const bothLandscape = count === 2 && photos.every((photo) => (photo.width ?? 4) / (photo.height ?? 3) >= 1.15);
+  const columns = count === 2 ? (bothLandscape ? 1 : 2) : count <= 4 ? 2 : 3;
   const rows = Math.ceil(count / columns);
   const cellW = (w - gap * (columns - 1)) / columns;
   const cellH = (h - gap * (rows - 1)) / rows;
@@ -50,8 +59,9 @@ function gridRects(count: number, x: number, y: number, w: number, h: number): R
   }));
 }
 
-function stripRects(count: number, x: number, y: number, w: number, h: number): Rect[] {
-  if (count > 3) return gridRects(count, x, y, w, h);
+function stripRects(photos: StoryPhoto[], x: number, y: number, w: number, h: number): Rect[] {
+  const count = photos.length;
+  if (count > 3) return gridRects(photos, x, y, w, h);
   const gap = 4;
   const cellW = (w - gap * (count - 1)) / count;
   return Array.from({ length: count }, (_, index) => ({
@@ -62,56 +72,88 @@ function stripRects(count: number, x: number, y: number, w: number, h: number): 
   }));
 }
 
-function featureRects(count: number, x: number, y: number, w: number, h: number): Rect[] {
-  if (count < 3 || count > 5) return gridRects(count, x, y, w, h);
+function featureRects(photos: StoryPhoto[], x: number, y: number, w: number, h: number): Rect[] {
+  const count = photos.length;
+  if (count < 3 || count > 5) return gridRects(photos, x, y, w, h);
   const gap = 4;
   const featureW = w * 0.62;
   const sideW = w - featureW - gap;
   const sideCount = count - 1;
   const sideH = (h - gap * (sideCount - 1)) / sideCount;
-  const rects: Rect[] = [{ x, y, w: featureW, h }];
-  for (let i = 0; i < sideCount; i++) {
-    rects.push({
+  const featureIndex = photos.reduce(
+    (best, photo, index) => photoRatio(photo) > photoRatio(photos[best]) ? index : best,
+    0,
+  );
+  const rects: Rect[] = new Array(count);
+  rects[featureIndex] = { x, y, w: featureW, h };
+  let sideIndex = 0;
+  for (let i = 0; i < count; i++) {
+    if (i === featureIndex) continue;
+    rects[i] = {
       x: x + featureW + gap,
-      y: y + i * (sideH + gap),
+      y: y + sideIndex * (sideH + gap),
       w: sideW,
       h: sideH,
-    });
+    };
+    sideIndex++;
   }
   return rects;
 }
 
-function layoutRects(layout: RenderLayout, count: number, x: number, y: number, w: number, h: number) {
-  if (layout === "feature") return featureRects(count, x, y, w, h);
-  if (layout === "strip") return stripRects(count, x, y, w, h);
-  return gridRects(count, x, y, w, h);
+function layoutRects(layout: RenderLayout, photos: StoryPhoto[], x: number, y: number, w: number, h: number) {
+  if (layout === "feature") return featureRects(photos, x, y, w, h);
+  if (layout === "strip") return stripRects(photos, x, y, w, h);
+  return gridRects(photos, x, y, w, h);
 }
 
-function drawPhoto(doc: jsPDF, photo: StoryPhoto, rect: Rect, rounded: boolean) {
-  const inner = rect;
+async function fittedPhotoData(photo: StoryPhoto, rect: Rect, rounded: boolean) {
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const element = new Image();
+    element.onload = () => resolve(element);
+    element.onerror = () => reject(new Error("Could not decode photo for PDF"));
+    element.src = photo.pdfDataUrl;
+  });
+  const targetRatio = rect.w / rect.h;
+  const sourceRatio = image.naturalWidth / image.naturalHeight;
+  let sx = 0;
+  let sy = 0;
+  let sw = image.naturalWidth;
+  let sh = image.naturalHeight;
+  if (sourceRatio > targetRatio) {
+    sw = sh * targetRatio;
+    sx = (image.naturalWidth - sw) / 2;
+  } else {
+    sh = sw / targetRatio;
+    sy = (image.naturalHeight - sh) / 2;
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.min(1600, Math.max(500, Math.round(rect.w * 7)));
+  canvas.height = Math.round(canvas.width / targetRatio);
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Canvas is unavailable");
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  if (rounded) {
+    const radius = Math.min(canvas.width, canvas.height) * 0.025;
+    context.beginPath();
+    context.roundRect(0, 0, canvas.width, canvas.height, radius);
+    context.clip();
+  }
+  context.drawImage(image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.92);
+}
 
-  // Keep any letterboxed area white. The previous gray fill and outline were
-  // visible around photos whose aspect ratio did not match their layout cell.
-  doc.setFillColor(255, 255, 255);
-  if (rounded) doc.roundedRect(rect.x, rect.y, rect.w, rect.h, 2.2, 2.2, "F");
-  else doc.rect(rect.x, rect.y, rect.w, rect.h, "F");
-
-  const naturalW = photo.width && photo.width > 0 ? photo.width : 4;
-  const naturalH = photo.height && photo.height > 0 ? photo.height : 3;
-  const scale = Math.min(inner.w / naturalW, inner.h / naturalH);
-  const drawW = naturalW * scale;
-  const drawH = naturalH * scale;
-  const drawX = inner.x + (inner.w - drawW) / 2;
-  const drawY = inner.y + (inner.h - drawH) / 2;
+async function drawPhoto(doc: jsPDF, photo: StoryPhoto, rect: Rect, rounded: boolean) {
 
   try {
+    const fitted = await fittedPhotoData(photo, rect, rounded);
     doc.addImage(
-      photo.pdfDataUrl,
-      imageFormat(photo.pdfDataUrl),
-      drawX,
-      drawY,
-      drawW,
-      drawH,
+      fitted,
+      "JPEG",
+      rect.x,
+      rect.y,
+      rect.w,
+      rect.h,
       undefined,
       "FAST",
     );
@@ -177,7 +219,7 @@ export async function generateStoryPdf(args: {
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
       const chunk = chunks[chunkIndex];
       const chosenLayout = settings.pageLayout === "auto" ? event.photoLayout : settings.pageLayout;
-      const layout = resolveLayout(chosenLayout, chunk.length);
+      const layout = resolveLayout(chosenLayout, chunk);
       const taken = new Date(event.takenAt);
       const date = taken.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
       const time = taken.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -206,8 +248,10 @@ export async function generateStoryPdf(args: {
       doc.text(`${meta || "Moment"}${continuation}`, MARGIN, y);
       y += 6;
 
-      const rects = layoutRects(layout, chunk.length, MARGIN, y, CONTENT_W, imageHeight);
-      chunk.forEach((photo, index) => drawPhoto(doc, photo, rects[index], settings.roundedCorners));
+      const rects = layoutRects(layout, chunk, MARGIN, y, CONTENT_W, imageHeight);
+      for (let index = 0; index < chunk.length; index++) {
+        await drawPhoto(doc, chunk[index], rects[index], settings.roundedCorners);
+      }
       y += imageHeight + 6;
 
       doc.setFont("helvetica", "normal");
