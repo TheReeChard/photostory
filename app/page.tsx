@@ -1,8 +1,10 @@
 "use client";
 
 import {
+  ArrowDown,
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
   CalendarDays,
   Check,
   CircleHelp,
@@ -305,6 +307,18 @@ export default function Home() {
       const from = current.findIndex((event) => event.id === dragId);
       const to = current.findIndex((event) => event.id === targetId);
       if (from < 0 || to < 0 || from === to) return current;
+      const next = [...current];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  }
+
+  function moveEvent(eventId: string, direction: -1 | 1) {
+    setEvents((current) => {
+      const from = current.findIndex((event) => event.id === eventId);
+      const to = from + direction;
+      if (from < 0 || to < 0 || to >= current.length) return current;
       const next = [...current];
       const [moved] = next.splice(from, 1);
       next.splice(to, 0, moved);
@@ -623,22 +637,29 @@ export default function Home() {
             <section className="documentPreview" aria-label="Editable document preview">
               {pdfSettings.includeCover && (
                 <article className="paperPage coverPreview">
-                  <h2>{title || "Our Journey"}</h2>
-                  <p>{photos.length} photos · {events.length} moments</p>
+                  <span className="pageBadge">Cover</span>
+                  <div><h2>{title || "Our Journey"}</h2><p>{photos.length} photos · {events.length} moments</p></div>
                 </article>
               )}
               {reviewPages.map((page, pageIndex) => (
                 <article className="paperPage" key={`page-${pageIndex}`}>
-                  <header className="paperHeader">{title || "Our Journey"}</header>
+                  <header className="paperHeader">
+                    <div><span className="pageBadge">Page {pageIndex + 1}</span><strong>{title || "Our Journey"}</strong></div>
+                    <small>{page.length} {page.length === 1 ? "moment" : "moments"} on this page</small>
+                  </header>
                   <div className="paperMoments">
                     {page.map(({ event, photos: chunk, chunkIndex, chunkCount }) => {
                       const taken = formatDateTime(event.takenAt);
                       const layout = pdfSettings.pageLayout === "auto" ? event.photoLayout : pdfSettings.pageLayout;
                       return (
                         <section
-                          className={cn("paperMoment sortableEvent", dragEventId === event.id && "isDragging")}
+                          className={cn("paperMoment sortableEvent", selectedEventId === event.id && "selected", dragEventId === event.id && "isDragging")}
                           key={`${event.id}-${chunkIndex}`}
                           data-sort-event-id={event.id}
+                          onClick={() => setSelectedEventId(event.id)}
+                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setSelectedEventId(event.id); }}
+                          role="button"
+                          tabIndex={0}
                         >
                           <div className="paperMomentHeading">
                             <span>
@@ -647,15 +668,19 @@ export default function Home() {
                               {pdfSettings.includeLocation && event.location}
                               {chunkIndex > 0 && ` · continued ${chunkIndex + 1}/${chunkCount}`}
                             </span>
-                            <button
-                              className="dragHandle paperDragHandle"
-                              type="button"
-                              aria-label="Drag moment to reorder"
-                              onPointerDown={(e) => beginEventDrag(e, event.id)}
-                              onPointerMove={continueEventDrag}
-                              onPointerUp={endEventDrag}
-                              onPointerCancel={endEventDrag}
-                            ><GripVertical size={15} /></button>
+                            <div className="paperMomentControls" onClick={(e) => e.stopPropagation()}>
+                              <button type="button" aria-label="Move moment earlier" disabled={events[0]?.id === event.id} onClick={() => moveEvent(event.id, -1)}><ArrowUp size={13} /></button>
+                              <button type="button" aria-label="Move moment later" disabled={events[events.length - 1]?.id === event.id} onClick={() => moveEvent(event.id, 1)}><ArrowDown size={13} /></button>
+                              <button
+                                className="dragHandle paperDragHandle"
+                                type="button"
+                                aria-label="Drag moment to reorder"
+                                onPointerDown={(e) => beginEventDrag(e, event.id)}
+                                onPointerMove={continueEventDrag}
+                                onPointerUp={endEventDrag}
+                                onPointerCancel={endEventDrag}
+                              ><GripVertical size={15} /></button>
+                            </div>
                           </div>
                           <EventPhotoGallery photos={chunk} layout={layout} className={cn("paperGallery", !pdfSettings.roundedCorners && "squareCorners")} max={pdfSettings.photosPerPage} />
                           {chunkIndex === chunkCount - 1 && <p>{event.memory || "Add a memory to this moment."}</p>}
@@ -663,55 +688,10 @@ export default function Home() {
                       );
                     })}
                   </div>
-                  <footer className="paperPageNumber">{pageIndex + 1}</footer>
                 </article>
               ))}
             </section>
 
-            <div className="sectionTitleRow"><h2>Moment details</h2></div>
-
-            <div className="reviewList">
-              {events.map((event, index) => {
-                const eventPhotos = event.photoIds.map((id) => photoById.get(id)).filter(Boolean) as StoryPhoto[];
-                const dt = formatDateTime(event.takenAt);
-                return (
-                  <article
-                    className={cn("reviewCard sortableEvent", selectedEventId === event.id && "selected", dragEventId === event.id && "isDragging")}
-                    key={event.id}
-                    data-sort-event-id={event.id}
-                    onClick={() => setSelectedEventId(event.id)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setSelectedEventId(event.id); }}
-                    role="button"
-                    tabIndex={0}
-                  >
-                    <button
-                      className="reviewDragHandle dragHandle"
-                      type="button"
-                      title="Drag to reorder"
-                      aria-label={`Drag moment ${index + 1} to reorder`}
-                      onClick={(e) => e.stopPropagation()}
-                      onPointerDown={(e) => beginEventDrag(e, event.id)}
-                      onPointerMove={continueEventDrag}
-                      onPointerUp={endEventDrag}
-                      onPointerCancel={endEventDrag}
-                    ><GripVertical size={15} /></button>
-                    <span className="reviewIndex">{index + 1}</span>
-                    <EventPhotoGallery
-                      photos={eventPhotos}
-                      layout={pdfSettings.pageLayout === "auto" ? event.photoLayout : pdfSettings.pageLayout}
-                      className="reviewPhotoGallery"
-                      max={pdfSettings.photosPerPage}
-                    />
-                    <div className="reviewText">
-                      <div className="reviewMeta"><span><CalendarDays size={13} /> {dt.date}</span><span><Clock3 size={13} /> {dt.time}</span></div>
-                      <strong><MapPin size={13} /> {event.location || "No location"}</strong>
-                      <p>{event.memory || "No memory added yet."}</p>
-                    </div>
-                    <span className="editPill">Edit</span>
-                  </article>
-                );
-              })}
-            </div>
           </section>
 
           {selectedEvent && (
