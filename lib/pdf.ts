@@ -88,13 +88,13 @@ function layoutRects(layout: RenderLayout, count: number, x: number, y: number, 
 }
 
 function drawPhoto(doc: jsPDF, photo: StoryPhoto, rect: Rect, rounded: boolean) {
-  const pad = 1.2;
-  const inner = { x: rect.x + pad, y: rect.y + pad, w: rect.w - pad * 2, h: rect.h - pad * 2 };
+  const inner = rect;
 
-  doc.setFillColor(244, 244, 241);
-  doc.setDrawColor(232, 232, 228);
-  if (rounded) doc.roundedRect(rect.x, rect.y, rect.w, rect.h, 2.2, 2.2, "FD");
-  else doc.rect(rect.x, rect.y, rect.w, rect.h, "FD");
+  // Keep any letterboxed area white. The previous gray fill and outline were
+  // visible around photos whose aspect ratio did not match their layout cell.
+  doc.setFillColor(255, 255, 255);
+  if (rounded) doc.roundedRect(rect.x, rect.y, rect.w, rect.h, 2.2, 2.2, "F");
+  else doc.rect(rect.x, rect.y, rect.w, rect.h, "F");
 
   const naturalW = photo.width && photo.width > 0 ? photo.width : 4;
   const naturalH = photo.height && photo.height > 0 ? photo.height : 3;

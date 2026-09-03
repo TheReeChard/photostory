@@ -52,9 +52,26 @@ function exifDate(raw: unknown, fallback: number): Date {
 }
 
 async function reverseGeocode(latitude: number, longitude: number) {
+  // BigDataCloud provides a key-free endpoint intended for browser/mobile
+  // clients. It avoids the inconsistent cross-origin behavior mobile browsers
+  // can encounter when calling the public Nominatim service directly.
   try {
-    // GitHub Pages cannot run a Next.js API route, so query Nominatim directly.
-    // The browser sends only the coordinates (never the photo bytes).
+    const url = new URL("https://api.bigdatacloud.net/data/reverse-geocode-client");
+    url.searchParams.set("latitude", String(latitude));
+    url.searchParams.set("longitude", String(longitude));
+    url.searchParams.set("localityLanguage", navigator.language || "en");
+    const response = await fetch(url);
+    if (response.ok) {
+      const data = await response.json();
+      const parts = [data.locality, data.principalSubdivision, data.countryName]
+        .filter((part, index, all) => typeof part === "string" && part && all.indexOf(part) === index);
+      if (parts.length) return parts.join(", ");
+    }
+  } catch {
+    // Fall through to the OpenStreetMap lookup below.
+  }
+
+  try {
     const url = new URL("https://nominatim.openstreetmap.org/reverse");
     url.searchParams.set("format", "jsonv2");
     url.searchParams.set("lat", String(latitude));
@@ -95,8 +112,20 @@ export async function parsePhoto(file: File): Promise<StoryPhoto> {
     file.lastModified,
   );
 
-  const latitude = typeof metadata.latitude === "number" ? metadata.latitude : undefined;
-  const longitude = typeof metadata.longitude === "number" ? metadata.longitude : undefined;
+  // Some mobile HEIC/JPEG files expose GPS in a separate IFD that is not
+  // returned by the general metadata parse. Ask exifr's GPS reader as a
+  // fallback so those photos still populate a location.
+  let latitude = typeof metadata.latitude === "number" ? metadata.latitude : undefined;
+  let longitude = typeof metadata.longitude === "number" ? metadata.longitude : undefined;
+  if (latitude === undefined || longitude === undefined) {
+    try {
+      const gps = await exifr.gps(file);
+      if (typeof gps?.latitude === "number") latitude = gps.latitude;
+      if (typeof gps?.longitude === "number") longitude = gps.longitude;
+    } catch {
+      // A photo without readable GPS is valid and can be labeled manually.
+    }
+  }
   let location = "";
 
   if (latitude !== undefined && longitude !== undefined) {

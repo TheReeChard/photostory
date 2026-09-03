@@ -22,7 +22,7 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
-import { ChangeEvent, DragEvent, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { buildEvents, formatDateTime, parsePhoto } from "@/lib/photo";
 import { generateStoryPdf } from "@/lib/pdf";
 import type { PdfSettings, PhotoLayout, StoryEvent, StoryPhoto } from "@/lib/types";
@@ -181,6 +181,7 @@ export default function Home() {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [reviewPdfBusy, setReviewPdfBusy] = useState(false);
   const [pdfSettings, setPdfSettings] = useState<PdfSettings>({
     photosPerPage: 4,
     pageLayout: "auto",
@@ -191,6 +192,7 @@ export default function Home() {
   });
   const inputRef = useRef<HTMLInputElement>(null);
   const dragEventIdRef = useRef<string | null>(null);
+  const pdfUrlRef = useRef<string | null>(null);
   const [dragEventId, setDragEventId] = useState<string | null>(null);
 
   const sortedPhotos = useMemo(
@@ -207,6 +209,29 @@ export default function Home() {
 
   const photoById = useMemo(() => new Map(photos.map((p) => [p.id, p])), [photos]);
   const selectedEvent = events.find((e) => e.id === selectedEventId) ?? null;
+
+  useEffect(() => {
+    if (step !== 2 || !events.length) return;
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setReviewPdfBusy(true);
+      try {
+        const blob = await generateStoryPdf({ title, events, photos, settings: pdfSettings });
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current);
+        pdfUrlRef.current = url;
+        setPdfBlob(blob);
+        setPdfUrl(url);
+      } finally {
+        if (!cancelled) setReviewPdfBusy(false);
+      }
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [step, title, events, photos, pdfSettings]);
 
   async function ingestFiles(fileList: FileList | File[]) {
     const accepted = Array.from(fileList).filter((file) =>
@@ -334,8 +359,9 @@ export default function Home() {
     setPdfBusy(true);
     try {
       const blob = await generateStoryPdf({ title, events, photos, settings: pdfSettings });
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+      if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current);
       const url = URL.createObjectURL(blob);
+      pdfUrlRef.current = url;
       setPdfBlob(blob);
       setPdfUrl(url);
       setStep(3);
@@ -583,6 +609,18 @@ export default function Home() {
               </div>
             </div>
 
+            <section className="reviewPdfPreview" aria-label="Live PDF preview">
+              <div className="pdfPreviewHeader">
+                <strong>Live PDF preview</strong>
+                <span>{reviewPdfBusy ? "Updating…" : "A4 portrait · updates with your settings"}</span>
+              </div>
+              {pdfUrl
+                ? <iframe className="pdfFrame" src={`${pdfUrl}#toolbar=0&view=FitH`} title="Live PhotoStory PDF preview" />
+                : <div className="pdfPlaceholder"><Loader2 className="spin" /></div>}
+            </section>
+
+            <div className="sectionTitleRow"><h2>Moment details</h2></div>
+
             <div className="reviewList">
               {events.map((event, index) => {
                 const eventPhotos = event.photoIds.map((id) => photoById.get(id)).filter(Boolean) as StoryPhoto[];
@@ -609,7 +647,12 @@ export default function Home() {
                       onPointerCancel={endEventDrag}
                     ><GripVertical size={15} /></button>
                     <span className="reviewIndex">{index + 1}</span>
-                    <EventPhotoGallery photos={eventPhotos} layout={event.photoLayout} className="reviewPhotoGallery" max={4} />
+                    <EventPhotoGallery
+                      photos={eventPhotos}
+                      layout={pdfSettings.pageLayout === "auto" ? event.photoLayout : pdfSettings.pageLayout}
+                      className="reviewPhotoGallery"
+                      max={pdfSettings.photosPerPage}
+                    />
                     <div className="reviewText">
                       <div className="reviewMeta"><span><CalendarDays size={13} /> {dt.date}</span><span><Clock3 size={13} /> {dt.time}</span></div>
                       <strong><MapPin size={13} /> {event.location || "No location"}</strong>
