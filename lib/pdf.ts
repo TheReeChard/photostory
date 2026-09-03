@@ -34,13 +34,6 @@ function resolveLayout(layout: PdfPageLayout | PhotoLayout, photos: StoryPhoto[]
   return "grid";
 }
 
-function imageAreaHeight(count: number, layout: RenderLayout) {
-  if (count === 1) return 78;
-  if (layout === "strip" && count <= 3) return 58;
-  if (count <= 4) return 82;
-  return 94;
-}
-
 function gridRects(photos: StoryPhoto[], x: number, y: number, w: number, h: number): Rect[] {
   const count = photos.length;
   const gap = 4;
@@ -197,28 +190,41 @@ export async function generateStoryPdf(args: {
     doc.addPage();
   }
 
-  addHeader();
-  let y = 30;
-  let photosOnPage = 0;
-
-  const newPage = () => {
-    doc.addPage();
-    addHeader();
-    y = 30;
-    photosOnPage = 0;
+  type PlannedBlock = {
+    event: StoryEvent;
+    eventPhotos: StoryPhoto[];
+    chunk: StoryPhoto[];
+    chunkIndex: number;
+    chunkCount: number;
   };
-
+  const plannedPages: PlannedBlock[][] = [];
+  let plannedPage: PlannedBlock[] = [];
+  let plannedPhotoCount = 0;
   for (const event of events) {
     const eventPhotos = event.photoIds.map((photoId) => byId.get(photoId)).filter(Boolean) as StoryPhoto[];
     if (!eventPhotos.length) continue;
-
     const chunks: StoryPhoto[][] = [];
     for (let i = 0; i < eventPhotos.length; i += settings.photosPerPage) {
       chunks.push(eventPhotos.slice(i, i + settings.photosPerPage));
     }
+    chunks.forEach((chunk, chunkIndex) => {
+      if (plannedPage.length && plannedPhotoCount + chunk.length > settings.photosPerPage) {
+        plannedPages.push(plannedPage);
+        plannedPage = [];
+        plannedPhotoCount = 0;
+      }
+      plannedPage.push({ event, eventPhotos, chunk, chunkIndex, chunkCount: chunks.length });
+      plannedPhotoCount += chunk.length;
+    });
+  }
+  if (plannedPage.length) plannedPages.push(plannedPage);
 
-    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
-      const chunk = chunks[chunkIndex];
+  for (let pageIndex = 0; pageIndex < plannedPages.length; pageIndex++) {
+    if (pageIndex > 0) doc.addPage();
+    addHeader();
+    let y = 30;
+    const page = plannedPages[pageIndex];
+    const prepared = page.map(({ event, eventPhotos, chunk, chunkIndex, chunkCount }) => {
       const chosenLayout = settings.pageLayout === "auto" ? event.photoLayout : settings.pageLayout;
       const layout = resolveLayout(chosenLayout, chunk);
       const taken = new Date(event.takenAt);
@@ -231,40 +237,40 @@ export async function generateStoryPdf(args: {
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9.2);
-      const memoryLines = chunkIndex === chunks.length - 1
+      const memoryLines = chunkIndex === chunkCount - 1
         ? doc.splitTextToSize(safeText(event.memory), CONTENT_W)
         : [`${chunkIndex * settings.photosPerPage + chunk.length} of ${eventPhotos.length} photos`];
       const visibleMemoryLines = memoryLines.slice(0, 4);
       const memoryHeight = visibleMemoryLines.length * 4.6 + 5;
-      const imageHeight = imageAreaHeight(chunk.length, layout);
-      const blockHeight = 6 + imageHeight + 6 + memoryHeight + 8;
+      return { event, chunk, chunkIndex, chunkCount, layout, meta, visibleMemoryLines, memoryHeight };
+    });
+    const fixedHeight = prepared.reduce((sum, item) => sum + 6 + 6 + item.memoryHeight + 8, 0);
+    const imageHeight = Math.max(48, (PAGE_BOTTOM - 30 - fixedHeight) / prepared.length);
 
-      if (photosOnPage > 0 && photosOnPage + chunk.length > settings.photosPerPage) newPage();
-      if (y + blockHeight > PAGE_BOTTOM && photosOnPage > 0) newPage();
-
+    for (const item of prepared) {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8.8);
       doc.setTextColor(38, 38, 38);
-      const continuation = chunkIndex > 0 ? " · continued" : "";
-      doc.text(`${meta || "Moment"}${continuation}`, MARGIN, y);
+      const continuation = item.chunkIndex > 0 ? ` · continued ${item.chunkIndex + 1}/${item.chunkCount}` : "";
+      doc.text(`${item.meta || "Moment"}${continuation}`, MARGIN, y);
       y += 6;
 
-      const rects = layoutRects(layout, chunk, MARGIN, y, CONTENT_W, imageHeight);
-      for (let index = 0; index < chunk.length; index++) {
-        await drawPhoto(doc, chunk[index], rects[index], settings.roundedCorners);
+      const rects = layoutRects(item.layout, item.chunk, MARGIN, y, CONTENT_W, imageHeight);
+      for (let index = 0; index < item.chunk.length; index++) {
+        await drawPhoto(doc, item.chunk[index], rects[index], settings.roundedCorners);
       }
       y += imageHeight + 6;
 
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(chunkIndex === chunks.length - 1 ? 9.2 : 8.4);
-      doc.setTextColor(chunkIndex === chunks.length - 1 ? 52 : 118, chunkIndex === chunks.length - 1 ? 52 : 118, chunkIndex === chunks.length - 1 ? 52 : 118);
-      doc.text(visibleMemoryLines, MARGIN, y + 3.5);
-      y += memoryHeight;
+      doc.setFontSize(item.chunkIndex === item.chunkCount - 1 ? 9.2 : 8.4);
+      const tone = item.chunkIndex === item.chunkCount - 1 ? 52 : 118;
+      doc.setTextColor(tone, tone, tone);
+      doc.text(item.visibleMemoryLines, MARGIN, y + 3.5);
+      y += item.memoryHeight;
 
       doc.setDrawColor(235, 235, 231);
       doc.line(MARGIN, y, PAGE_W - MARGIN, y);
       y += 8;
-      photosOnPage += chunk.length;
     }
   }
 

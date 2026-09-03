@@ -136,12 +136,15 @@ function EventPhotoGallery({
   layout,
   className,
   max = 6,
+  onReorderPhoto,
 }: {
   photos: StoryPhoto[];
   layout: PhotoLayout;
   className?: string;
   max?: number;
+  onReorderPhoto?: (sourceId: string, targetId: string) => void;
 }) {
+  const draggedPhotoId = useRef<string | null>(null);
   const visible = photos.slice(0, max);
   const resolved = resolvedPhotoLayout(layout, visible);
   const featureIndex = resolved === "feature"
@@ -165,9 +168,23 @@ function EventPhotoGallery({
       style={galleryStyle}
     >
       {visible.map((photo, index) => (
-          <div className={cn("galleryTile", index === featureIndex && "firstTile")} key={photo.id}>
+        <div
+          className={cn("galleryTile", index === featureIndex && "firstTile", onReorderPhoto && "reorderablePhoto")}
+          key={photo.id}
+          draggable={Boolean(onReorderPhoto)}
+          onDragStart={() => { draggedPhotoId.current = photo.id; }}
+          onDragOver={(event) => { if (onReorderPhoto) event.preventDefault(); }}
+          onDrop={(event) => {
+            event.preventDefault();
+            if (draggedPhotoId.current && draggedPhotoId.current !== photo.id) {
+              onReorderPhoto?.(draggedPhotoId.current, photo.id);
+            }
+            draggedPhotoId.current = null;
+          }}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={photo.previewUrl} alt={photo.file.name} />
+          {onReorderPhoto && <span className="photoOrderBadge">{index + 1}</span>}
         </div>
       ))}
       {photos.length > max && <span className="morePhotos">+{photos.length - max}</span>}
@@ -312,6 +329,20 @@ export default function Home() {
       next.splice(to, 0, moved);
       return next;
     });
+  }
+
+  function reorderPhoto(eventId: string, sourceId: string, targetId: string) {
+    if (sourceId === targetId) return;
+    setEvents((current) => current.map((event) => {
+      if (event.id !== eventId) return event;
+      const from = event.photoIds.indexOf(sourceId);
+      const to = event.photoIds.indexOf(targetId);
+      if (from < 0 || to < 0) return event;
+      const photoIds = [...event.photoIds];
+      const [moved] = photoIds.splice(from, 1);
+      photoIds.splice(to, 0, moved);
+      return { ...event, photoIds };
+    }));
   }
 
   function moveEvent(eventId: string, direction: -1 | 1) {
@@ -682,7 +713,13 @@ export default function Home() {
                               ><GripVertical size={15} /></button>
                             </div>
                           </div>
-                          <EventPhotoGallery photos={chunk} layout={layout} className={cn("paperGallery", !pdfSettings.roundedCorners && "squareCorners")} max={pdfSettings.photosPerPage} />
+                          <EventPhotoGallery
+                            photos={chunk}
+                            layout={layout}
+                            className={cn("paperGallery", !pdfSettings.roundedCorners && "squareCorners")}
+                            max={pdfSettings.photosPerPage}
+                            onReorderPhoto={(sourceId, targetId) => reorderPhoto(event.id, sourceId, targetId)}
+                          />
                           {chunkIndex === chunkCount - 1 && <p>{event.memory || "Add a memory to this moment."}</p>}
                         </section>
                       );
