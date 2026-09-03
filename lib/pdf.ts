@@ -61,7 +61,6 @@ function gridRects(photos: StoryPhoto[], x: number, y: number, w: number, h: num
 
 function stripRects(photos: StoryPhoto[], x: number, y: number, w: number, h: number): Rect[] {
   const count = photos.length;
-  if (count > 3) return gridRects(photos, x, y, w, h);
   const gap = 4;
   const cellW = (w - gap * (count - 1)) / count;
   return Array.from({ length: count }, (_, index) => ({

@@ -149,7 +149,7 @@ function EventPhotoGallery({
       return ratio > bestRatio ? index : best;
     }, 0)
     : -1;
-  const stripColumns = Math.max(1, Math.min(visible.length, 4));
+  const stripColumns = Math.max(1, visible.length);
 
   const galleryStyle = resolved === "strip"
     ? { gridTemplateColumns: `repeat(${stripColumns}, minmax(0, 1fr))` }
